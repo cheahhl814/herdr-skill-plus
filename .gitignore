@@ -1,0 +1,14 @@
+# Build-time working notes — never publish
+context/
+BRIEF.md
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.bak
+*.tmp
+__pycache__/
+*.pyc
+.obsidian/

@@ -1,0 +1,15 @@
+# Verbatim capture — 2026-09-02 — do not edit; regenerate with the noted command
+# Source: herdr workspace --help
+Manage workspaces over the socket API
+
+Usage: herdr workspace [COMMAND]
+
+Commands:
+  list             List workspaces
+  create           Create a workspace
+  get              Show a workspace
+  focus            Focus a workspace
+  rename           Rename a workspace
+  report-metadata  Report display-only workspace metadata
+  close            Close a workspace
+
