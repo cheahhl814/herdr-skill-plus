@@ -6,6 +6,7 @@ hallucinating them. Regenerate captures rather than hand-editing them.
 Two provenance tiers per file:
 - **Source 1 — verbatim CLI captures** (`help-*.md`, `status.md`): authoritative for the pinned installed version. Note: absolute `$HOME` paths that leaked the local username in two captures (`help-root.md`, `status.md`) were genericized to `$HOME/...` on 2026-09-02 for public publish — otherwise verbatim.
 - **Source 2 — online docs** (`*-online-docs/`, `online-docs-*/`, upstream repo copies): richer context (concepts, config files, quotas, permission semantics) ingested via docs-ingest from official sites/repos; may be newer or older than the installed binary.
+- **Source 3 — community marketplace** (`herdr/related-plugins.md`): self-tagged, unreviewed third-party plugins from herdr.dev/plugins/. Candidates only — never installed automatically, evaluate before use.
 
 ## Layout
 
@@ -21,7 +22,9 @@ docs-corpus/
 │   ├── upstream-skill-SKILL.md   herdr's own shipped agent skill (upstream reference)
 │   ├── agent-guide.md      distribution/agent-guide.md (setup + diagnosis recipes)
 │   ├── github-README.md    repo README
-│   └── plugin-README.md, plugin-index.ts   pi-herdr plugin (tool-level docs + source)
+│   ├── plugin-README.md, plugin-index.ts   pi-herdr plugin (tool-level docs + source)
+│   └── related-plugins.md  CURATED, source 3: community-marketplace plugin candidates
+│                           for §2-§4 gaps (quota API, transcript normalization, dispatch)
 └── harnesses/              supported coding-agent CLIs installed on this machine
     ├── permission-modes.md         CURATED summary: auto-approval/yolo flags per harness
     ├── herdr-supported-kinds.txt   verbatim `herdr agent start --help` kind list

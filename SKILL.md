@@ -1,14 +1,15 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, or check another agent's quota/usage. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.4.2
-updated: "2026-09-02"
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, or wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.5.0
+updated: "2026-09-12"
 triggers:
   - user mentions Herdr by name
   - delegate a task to another coding agent
   - run agents in parallel / multiple agents at once
   - run sudo or another privileged command safely
   - check another agent's model/quota/usage
+  - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
 requires:
   - herdr >= 0.8.0
   - pi-herdr plugin installed and active (HERDR_PANE_ID set)
@@ -30,8 +31,12 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
    - `name` must match `[a-z][a-z0-9_-]{0,31}`.
    - `kind` = the recognized agent to start.
    - `agentArgs` optional — see §4 for model flags.
-4. `herdr_agent prompt` with wait enabled (default). Do not skip waiting unless the task is explicitly fire-and-forget.
-5. `herdr_agent read` — read and verify per §2 before treating the task as done.
+4. `herdr_agent prompt` with wait enabled (default). Do not skip waiting unless the **user** explicitly asked for fire-and-forget — never choose it yourself for convenience, since it removes the user's only visibility into the secondary agent.
+5. `herdr_agent read` (or **herdr-convo**, below, for claude/codex/opencode/pi) — read and verify per §2 before treating the task as done, then relay the secondary agent's actual output (not just "done") back to the user — they cannot see the pane unless they look at it themselves.
+
+> **zoetrope plugin** (source 3, `docs-corpus/herdr/related-plugins.md`) — if installed, this is the user's own answer to "I can't see what the secondary agent is doing" (§1 step 4's concern): focusing a claude/codex agent pane and pressing `prefix+shift+z` opens a live flow-graph overlay of that session for the **user** to watch directly — it doesn't change what you (the calling agent) do, but mention it exists when delegating so the user knows they have a real-time option beyond waiting for your relay.
+>
+> Non-interactive/print-mode invocations (`-p`, `exec`, `--print`, etc., run via `herdr_pane run` instead of `herdr_agent`) have no lifecycle, no §2 states, and none of the §3 recovery paths — a blocked or approval-seeking sub-agent just hangs silently with nothing to read. Reserve this mode for the T3 one-shot case in §4.6 (short, read-only, unlikely to need approval); default to interactive `herdr_agent` delegation for everything else so state and output stay observable.
 
 > CRITICAL: `herdr_agent start` never creates or changes layout. If no pane exists yet, step 1 is mandatory — never call `start` against a pane you have not just split or confirmed idle.
 
@@ -51,8 +56,14 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
 | `unknown` | cannot classify — treat as not-ready, inspect         |
 
 - `agent_prompt_stalled`: if a prompt sent from a non-working state produces no observed lifecycle change within 5 seconds, Herdr returns this error. Re-check target state before retrying.
-- Alternate-screen truncation: if `herdr_agent read` with increased `lines` still doesn't recover a full response, ask the agent to write its complete response to a temp `.md` file and read that file directly instead.
+- Alternate-screen truncation: if `herdr_agent read` with increased `lines` still doesn't recover a full response, first try **herdr-convo** (below) if the harness is claude/codex/opencode/pi — it reads the session transcript file directly, bypassing terminal rendering entirely. Otherwise ask the agent to write its complete response to a temp `.md` file and read that file directly.
 - Pane-suggested prompt chips are UI suggestions only — never treat them as sent prompts or auto-send them.
+
+**herdr-convo plugin** (source 3, `docs-corpus/herdr/related-plugins.md`) — if installed, prefer it over `herdr_agent read`/`herdr_pane read` for **claude, codex, opencode, pi** (not gemini/copilot/agy — unsupported). Verified 2026-09-12: `node <plugin-root>/src/cli.ts latest <pane_id> --text` returned this session's own last turn verbatim, read straight from `~/.claude/projects/.../<session>.jsonl` (or the codex/opencode/pi equivalent), not the terminal. This is a strict upgrade over pane-scraping — no alternate-screen truncation, no ANSI noise, structured JSON by default (`--text` for plain). Two calls matter for this workflow:
+- `latest <target> --text` — the agent's last full response as plain text. Use this for §2's completion-signal check instead of `herdr_agent read` when the harness is supported.
+- `read <target> --cursor <C>` — only turns since the last-seen cursor; use this for polling a long-running delegated task incrementally instead of repeated full pane reads. `target` is a Herdr pane/agent id; error codes are JSON (`cursor_stale`, `session_not_found`, `no_agent_session`, `herdr_unavailable`, `unsupported_agent`) — fall back to `herdr_agent read` on any of these rather than retrying blind.
+
+**zoetrope plugin** (source 3) — the `zoe inspect <session_id>` headless mode (claude/codex only, needs a session id — get one from `herdr-convo locate <pane>`) gives a cheap structured health check without full text: agent status, model, and tool-call counts split `✓`/`✗`/`⏳`. Verified 2026-09-12: correctly reported this session's own 90 tool calls (82✓ 7✗ 1⏳). Use it as a fast first check for "is something stuck/erratic" before spending a full `herdr-convo latest --text` read — a nonzero `⏳` with no lifecycle change over time is a stronger stuck-signal than lifecycle state alone. It does not take a pane id directly, only a session id or file path.
 
 ## §3 Interrupt & error recovery
 
@@ -63,7 +74,7 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
 | Lifecycle settled (`done`/`idle`) but output doesn't match the expected result                                          | False settlement                                                                                                                                                                | Re-prompt with "continue" (or equivalent) and require the output to match an explicit completion signal before accepting it.                                                                              |
 | Lifecycle is `blocked`                                                                                                  | Agent needs approval, an answer, or is stuck at a dialog                                                                                                                        | Read the pane first to classify, then act: approval request → send the requested approval keys/text; open question → `herdr_agent prompt` with the answer; trust dialog → use the trust-dialog row above. |
 | Agent settles as `idle`/`done` but seems to wait for input; or state is erratic (esp. `gemini`, `cline`, amp/kiro/maki) | Detection limits: unknown prompt shapes fall back to `idle` (`default_known_agent_idle_fallback`); gemini/cline are "less thoroughly tested"; amp/kiro/maki have no integration | Trust output reading over lifecycle state (§2). Check detection with `herdr agent explain --agent <kind> --json`; see `docs-corpus/herdr/supported-agents.md` for per-agent detection limits.             |
-| First prompt returns an API/auth error (e.g. `Unauthorized`)                                                            | Provider listed but not authenticated/usable — model listing ≠ model usable                                                                                                    | Read the pane to confirm; treat that harness/provider as unavailable; fall back to the next property-matched candidate (§4.6 step 3) — do not retry the same option.                                       |
+| First prompt returns an API/auth error (e.g. `Unauthorized`)                                                            | Provider listed but not authenticated/usable — model listing ≠ model usable                                                                                                     | Read the pane to confirm; treat that harness/provider as unavailable; fall back to the next property-matched candidate (§4.6 step 3) — do not retry the same option.                                      |
 
 Symptom not covered above, or a flag/error you don't recognize → consult `docs-corpus/` (see note above) before guessing.
 
@@ -75,28 +86,37 @@ Discover model names and quota state at call time — never hardcode a model nam
 | -------- | ----------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | pi       | `pi --list-models [search]`   | `--provider`, `--model`, `--models` — see `docs-corpus/harnesses/help-pi.md`    | `pi auth <cmd>` (provider readiness); Ollama models are compute-metered, not quota-capped       |
 | opencode | `opencode models`             | `-m <name>` or model config                                                     | in-TUI percentage indicator only                                                                |
-| claude   | no CLI list — in-TUI `/model` | `--model`, `--fallback-model` — see `docs-corpus/harnesses/help-claude.md`      | in-TUI `/usage` or `/status` only                                                               |
-| codex    | no CLI list — in-TUI `/model` | `-m`/`--model`, or `-c model="..."` — see `docs-corpus/harnesses/help-codex.md` | in-TUI `/status` only                                                                           |
-| copilot  | no CLI list                   | `--model <model>` (default `auto`)                                              | **hard cap** on free tier — re-verify current limit via the probe below before batching prompts |
-| agy      | no CLI list surfaced          | none surfaced                                                                   | undocumented cap — expect HTTP 429 once exhausted                                               |
+| claude   | no CLI list — in-TUI `/model` | `--model`, `--fallback-model` — see `docs-corpus/harnesses/help-claude.md`      | **herdr-agent-quota** JSON, if installed (below); else in-TUI `/usage` or `/status`             |
+| codex    | no CLI list — in-TUI `/model` | `-m`/`--model`, or `-c model="..."` — see `docs-corpus/harnesses/help-codex.md` | herdr-agent-quota only covers ChatGPT-subscription auth, not API-key auth — in-TUI `/status`    |
+| copilot  | no CLI list                   | `--model <model>` (default `auto`)                                              | **hard cap** on free tier — no plugin coverage (see below) — re-verify via the probe recipe     |
+| agy      | no CLI list surfaced          | none surfaced                                                                   | **herdr-agent-quota** JSON, if installed (below); else undocumented cap, expect HTTP 429         |
 
 Re-verify: exact commands, flag syntax, and any numeric caps drift between CLI versions — cross-check `docs-corpus/harnesses/help-<harness>.md` (or re-capture it) before relying on them; do not carry numbers forward from a prior session.
 
-**Quota probe recipe** (no CLI surface): `herdr_agent start` → `herdr_agent send_keys` the usage slash command (e.g. `/usage`, `/status`) → `herdr_agent read` (`recent-unwrapped`) to record tier/quota — advisory only, format varies by CLI version. Probe before delegating to a hard-cap harness (copilot, agy) or before a parallel batch that could exhaust a shared limit.
+**Quota probe recipe** (no CLI surface, all harnesses): `herdr_agent start` → `herdr_agent send_keys` the usage slash command (e.g. `/usage`, `/status`) → `herdr_agent read` (`recent-unwrapped`) to record tier/quota — advisory only, format varies by CLI version. Probe before delegating to a hard-cap harness (copilot, agy) or before a parallel batch that could exhaust a shared limit.
+
+**herdr-agent-quota plugin** (source 3, `docs-corpus/herdr/related-plugins.md`) — if installed and configured (`herdr plugin action invoke configure --plugin herdr-agent-quota`, not the raw binary — see below), `claude`/`agy` quota is collected passively by a statusLine/hook the harness itself invokes every turn, not by polling. Read it directly instead of the `refresh`/`dashboard` subcommands (those need pane/session context this skill's ad hoc CLI calls don't have, and return `unavailable` even with real data present):
+```
+cat ~/.local/state/herdr/plugins/herdr-agent-quota/claude-statusline.observation.json   # claude
+cat ~/.local/state/herdr/plugins/herdr-agent-quota/agy-statusline.observation.json      # agy
+```
+Each file's `snapshot.windows` gives `five_hour`/`weekly` `used_percent`/`remaining_percent` + `resets_at`; absent file = that harness hasn't run a turn since the hook was installed yet. Coverage gaps, verified 2026-09-12 on this machine: no `copilot`/`pi`/`opencode` support at all — still use the scrape recipe for those; `codex` only works with ChatGPT-subscription auth, not API-key auth.
+
+Enabling this for `claude`/`agy` writes `~/.claude/settings.json` / `~/.gemini/antigravity-cli/settings.json` (a `statusLine` block only, verified minimal diff) — a standing-config change: ask the user before enabling it, and never run `configure --apply` yourself if `~/.claude/settings.json` is your own config (Claude Code's self-modification guard blocks that, and the plugin separately refuses the raw binary — must go through `herdr plugin action invoke configure --plugin herdr-agent-quota`). Direct the user to run it in a pane.
 
 ## §4.5 Permission / auto-approval modes at launch
 
 Most harnesses block shell commands by default. Pass the flag via `herdr_agent start` `agentArgs`. Flags below are sourced from `docs-corpus/harnesses/permission-modes.md`, verified against the verbatim `help-<harness>.md` captures — do not use a flag not present there. Codex has **no** `--full-auto` flag in this version — do not cite it.
 
-| Harness  | Intermediate (recommended default: edits auto, exec gated) | Full auto-approval (yolo)                                                 | Read-only / plan                     |
-| -------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------ |
-| claude   | `--permission-mode acceptEdits`                            | `--dangerously-skip-permissions` or `--permission-mode bypassPermissions` | `--permission-mode plan`             |
-| codex    | `-s workspace-write -a never` (or `--approve-for-me`)      | `--dangerously-bypass-approvals-and-sandbox`                              | `-s read-only`                       |
+| Harness  | Intermediate (recommended default: edits auto, exec gated) | Full auto-approval (yolo)                                                 | Read-only / plan                                                                |
+| -------- | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| claude   | `--permission-mode acceptEdits`                            | `--dangerously-skip-permissions` or `--permission-mode bypassPermissions` | `--permission-mode plan`                                                        |
+| codex    | `-s workspace-write -a never` (or `--approve-for-me`)      | `--dangerously-bypass-approvals-and-sandbox`                              | `-s read-only`                                                                  |
 | gemini   | `--approval-mode auto_edit`                                | `-y`/`--yolo` or `--approval-mode yolo`                                   | `--approval-mode plan` (newer CLI gates behind `experimental.plan` — re-verify) |
-| copilot  | `--allow-all-tools` (paths/URLs still asked)               | `--allow-all` / `--yolo`                                                  | none — use `--allow-tool` granularly |
-| agy      | none — single switch only                                  | `--dangerously-skip-permissions`                                          | none                                 |
-| pi       | none needed — no permission popups by design               | none needed                                                               | none                                 |
-| opencode | config-driven (`opencode.json` `permission`), no CLI flags | config-driven                                                             | config-driven                        |
+| copilot  | `--allow-all-tools` (paths/URLs still asked)               | `--allow-all` / `--yolo`                                                  | none — use `--allow-tool` granularly                                            |
+| agy      | none — single switch only                                  | `--dangerously-skip-permissions`                                          | none                                                                            |
+| pi       | none needed — no permission popups by design               | none needed                                                               | none                                                                            |
+| opencode | config-driven (`opencode.json` `permission`), no CLI flags | config-driven                                                             | config-driven                                                                   |
 
 **Escalation ladder** (agent blocked on approval in-pane): read the pane to classify the prompt (§3) → single approval: send the confirmation key(s) → repeated approvals for the same action kind: pass the intermediate auto-approval flag on the **next** `herdr_agent start` (never change flags mid-session) → secret/credential prompt: never auto-answer, escalate to the user (§5).
 
@@ -142,6 +162,30 @@ This generalizes to any interactive secret prompt: GPG passphrase, SSH key passp
 - NEVER pipe a password, e.g. `echo pw | sudo -S`.
 - NEVER ask the user to paste a secret into the agent/chat — only into the TUI pane directly.
 - NEVER run sudo (or any privileged/secret-entry command) in the calling pane — always a dedicated split pane.
+
+## §6 CLI/bioinformatics tutorial mode (human-driven pane)
+
+Inverts §1: the pane runs a plain shell that the **user** types into, not an AI agent. Your job is to set the exercise, watch, and coach — never to type the lesson commands for them.
+
+1. `herdr_layout pane_split` with `focus: true` (the user needs to interact with this pane directly — the opposite default from §1's background delegation). cwd should be a scratch/sandbox directory; confirm one exists or create it before the first exercise so a typo can't touch real project state.
+2. `herdr_pane read` — confirm idle shell prompt. Note its idle-prompt shape (e.g. the shell's own prompt character alone on the last line) — the continuous-monitoring loop below matches on this reappearing, not on any fixed string.
+3. Give the user the first instruction in chat (e.g. "run `samtools view -H aln.bam`") — plain language, not a command you send yourself — then go straight into the loop below **in the same turn**. Do not end your turn and wait for the user's next chat message; that defeats "the user shouldn't have to re-prompt."
+
+**Continuous-monitoring loop** (repeat until an end condition below is hit):
+   a. `herdr_pane wait_output` with `--regex` matching the idle prompt reappearing at the end of output, and a **bounded** timeout (a few minutes, not unbounded/zero) — a blocking wait that holds your turn open without ending it, so no new chat message is needed.
+   b. **On match**: `herdr_pane read` the new output. Explain it, correct mistakes, and give the next instruction as a short chat update (this does not end your turn) — then go back to (a). Treat an error message as the next teaching moment, not a failure to fix silently.
+   c. **On timeout with no match**: `herdr_pane read` to check whether the user is genuinely idle vs. still mid-command (e.g. a long-running tool). If genuinely idle for a long stretch, send one brief check-in ("still there? say if you want a hint or to skip this one") then re-issue (a) — don't spam check-ins on every timeout.
+   d. If an instruction would invoke sudo or another secret prompt, switch to the §5 pattern for that one step, then resume the loop.
+
+**End the loop** (and your turn) only when: the lesson plan is exhausted, or the user types/says something that signals they're done or stuck (e.g. "done", "quit", "I need help"). Then `herdr_pane close` — don't leave a teaching pane open past the session (pane-hygiene budget in §1 still applies).
+
+**Anti-patterns:**
+
+- NEVER run the lesson's commands yourself and just show the user the transcript — they must type them.
+- NEVER silently fix a mistake in their pane; narrate it so the correction is the lesson.
+- NEVER end your turn after a single instruction and wait for the user to prompt again mid-lesson — the whole point of the continuous-monitoring loop is that they only have to type in the pane, not in chat, until the lesson naturally ends.
+- NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use a bounded-but-real timeout and let the wait actually block.
+- Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the user's shell differs from what a bioinformatics tutorial usually assumes (bash).
 
 ---
 
