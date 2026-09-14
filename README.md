@@ -1,15 +1,15 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.7.0-blue)](#-installation)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue)](#-installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#-installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
-Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, or wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, or run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
 
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.7.0** (updated 2026-09-15).
+> Current version: **v0.8.0** (updated 2026-09-15).
 
 ## Contents
 
@@ -120,13 +120,15 @@ pixi run update-check
 ```text
 herdr-skill+/
 ├── SKILL.md                 # Master orchestrator (router — start here)
+├── quiz.schema.v1.json      # JSON Schema 2020-12 for §7 quiz interchange shape
 ├── README.md                # This file
 ├── pixi.toml                # Pinned tool environment (pixi install)
 ├── docs-corpus/             # Offline snapshots of upstream tool docs
 ├── bin/
-│   └── skill-update-check.py  # Self-update check (pixi run update-check)
-└── bin/
-    └── scaffold-render.py     # Reproducibility — re-render the skill from params.json
+│   ├── skill-update-check.py  # Self-update check (pixi run update-check)
+│   ├── scaffold-render.py     # Reproducibility — re-render the skill from params.json
+│   └── quiz-import-pdf.py     # PDF/Markdown → quiz.schema.v1.json skeleton
+└── LICENSE
 ```
 
 ## 🔒 Hard guarantees

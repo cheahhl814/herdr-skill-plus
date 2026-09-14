@@ -1,7 +1,7 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, or run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.7.0
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a quiz from PDF/Markdown. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.8.0
 updated: "2026-09-15"
 triggers:
   - user mentions Herdr by name
@@ -11,6 +11,7 @@ triggers:
   - check another agent's model/quota/usage
   - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
   - run a quiz / knowledge-check in a side pane (MCQ, spot-the-bug, task items)
+  - import a quiz from a PDF / Markdown / lit-fetch source via bin/quiz-import-pdf.py
 requires:
   - herdr >= 0.8.0
   - pi-herdr plugin installed and active (HERDR_PANE_ID set)
@@ -237,6 +238,8 @@ Quiz item types map onto the tool's parameters as follows:
 - NEVER use the `notes` field to smuggle the answer in — the student can read it; it's for *student → model* reasoning, not the reverse.
 - NEVER run quiz commands in the agent's own pane — type them in the student pane only (§6 rule carries over).
 - If `ask_user_question` is unavailable, the model has no equivalent fallback for graded MCQ (a `wait_output` regex can't capture a radio choice). In that host, end the quiz with a chat note and a `herdr_pane close` — do not invent a polling replacement.
+
+**Interchange JSON (optional).** A quiz authored offline (PDF chapter → text → items by hand, lit-fetched paper, or a sibling skill like `study-designer`) can be dropped in as `quiz.schema.v1.json` (sibling of this file) and validated against `quiz.schema.v1.json` (JSON Schema 2020-12). §7 reads `items[]` one at a time and renders each via the per-item loop above; the `correct`, `answer_key`, and `gates` fields drive grading and §6 gate wiring. Inline-authored items skip the JSON entirely — the schema is a *convergence point* for importers, not a gate. `source.provenance` (PDF page, extractor toolchain) is preserved on each item so quizzes can be re-pointed at their facts during review.
 
 ---
 
