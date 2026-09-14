@@ -1,7 +1,7 @@
 ---
 name: herdr-skill+
 description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.10.0
+version: 0.11.0
 updated: "2026-09-15"
 triggers:
   - user mentions Herdr by name
@@ -171,7 +171,19 @@ This generalizes to any interactive secret prompt: GPG passphrase, SSH key passp
 
 Inverts §1: the pane runs a plain shell that the **user** types into, not an AI agent. Your job is set the exercise, gate on milestone completion, and coach — never to type the lesson commands for them, never to busy-poll the pane.
 
-The natural failure mode of the previous design was LLM-token noise: every `bash sleep` + `herdr_pane read` iteration produced a fresh streaming reply while the student thought. The fix below uses `ask_user_question` as the **only** gating primitive — a single blocking tool call the student resolves by tabbing back to the chat and pressing `1` or `2`, with zero LLM tokens in between. (This mirrors how Claude Code and OpenCode surface permission prompts: a push UI, not a poll loop.)
+The natural failure mode of the previous design was LLM-token noise: every `bash sleep` + `herdr_pane read` iteration produced a fresh streaming reply while the student thought. The fix below uses a **push-UI question tool** as the **only** gating primitive — a single blocking tool call the student resolves by tabbing back to the chat and pressing `1` or `2`, with zero LLM tokens in between. (This mirrors how Claude Code and OpenCode surface permission prompts: a push UI, not a poll loop.)
+
+**Host equivalents of the push-UI question tool.** §6 and §7 call this tool "`ask_user_question`", but the exact tool name and schema differ per host. Use whichever your host exposes; the workflow contract is identical:
+
+| Host | Tool | Surface |
+|---|---|---|
+| **Pi** (this skill's primary host) | `ask_user_question` (from `@juicesharp/rpiv-ask-user-question`) | Tabbed TUI overlay: typed options, `multiSelect` checkboxes, `preview` side-by-side ≥100 cols, `Type something.` free-text, `Submit` review tab when ≥2 questions, per-question `n` notes |
+| **Claude Code** | `AskUserQuestion` (built-in) | Permission-card UI; `multiSelect` supported; *no* `preview`; notes / `Type something.` not separately surfaced |
+| **OpenCode** | `task` permission policy `question` (built-in) | Inline ask during execution; the model surfaces a single question at a time |
+| **RPC/ACP hosts** (VS Code pendant, Zed, Paseo) | `ask_user_question` if installed; otherwise the host's native `select` + `input` dialogs | Native dialogs one-question-at-a-time; no tab bar, no Submit review, no notes; previews truncated to 600 chars and folded into the dialog title |
+| **Non-interactive run** (CI, headless) | — | Tool is removed from the model list (Pi's `before_agent_start` reconciler, per `ask_user_question`'s `hosts.md`). §6 falls back to a single bounded `wait_output`; §7 has no equivalent and ends the quiz. |
+
+Whenever §6 or §7 below says "`ask_user_question`", read it as "your host's push-UI question tool." The *workflow contract* — one blocking tool call, zero LLM tokens while the student answers, two-option canonical gate on lesson steps, one tool call per quiz item — applies identically across hosts. Host-specific *features* (preview, notes, Submit tab) degrade silently when not available; do not block on them.
 
 **Course content intake.** §6 walks the student through a lesson whose source is plain Markdown. Three paths converge on this shape:
 
@@ -182,12 +194,12 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 §6's loop below assumes Markdown is on disk in front of you. If it isn't, your first turn is "import the source first" — not "import and then start teaching in the same turn." The `--llm-stdin` mode produces a `FILL_THIS.md`; that directive IS your first turn. Read it, fill the skeletons, validate the quiz JSON against `quiz.schema.v1.json`, then start §6.
 
 1. `herdr_layout pane_split` with `focus: true` (the user needs to interact with this pane directly — the opposite default from §1's background delegation). cwd should be a scratch/sandbox directory; confirm one exists or create it before the first exercise so a typo can't touch real project state.
-2. `herdr_pane read` — confirm idle shell prompt and note its shape (e.g. `$ `, `❯ `, `~/scratch> `). You are NOT going to regex-match it for gating in the loop below — `herdr_pane wait_output` matches against *existing* output too and returns on the stale pre-existing prompt before the student has typed anything (verified 2026-09-14). Polling to dodge that bug is exactly what produces per-iteration noise. Use `ask_user_question` instead.
+2. `herdr_pane read` — confirm idle shell prompt and note its shape (e.g. `$ `, `❯ `, `~/scratch> `). You are NOT going to regex-match it for gating in the loop below — `herdr_pane wait_output` matches against *existing* output too and returns on the stale pre-existing prompt before the student has typed anything (verified 2026-09-14). Polling to dodge that bug is exactly what produces per-iteration noise. Use the push-UI question tool (see *Host equivalents* above) instead.
 3. Give the student the first instruction in chat (e.g. "run `samtools view -H aln.bam`"). Plain language, not a command you send yourself. Then go straight into the gate below **in the same turn** — do not end your turn and wait for the student's next chat message; that defeats "the student shouldn't have to re-prompt."
 
 **Step-gate loop** (repeat until an end condition below is hit):
 
-   a. `ask_user_question` with exactly one question, two options, in this order:
+   a. The push-UI question tool with exactly one question, two options, in this order:
 
       - `I did it (next lesson)` — description: "I ran the command in the side pane. Move on to the next step."
       - `Something went wrong` — description: "I got an error or the output looks off — coach me through it before continuing."
@@ -204,7 +216,7 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 
 **End the loop** (and your turn) only when: the lesson plan is exhausted, or the student's answer or a chat message signals they're done or stuck ("done", "quit", "I need help"). Then `herdr_pane close` — don't leave a teaching pane open past the session (pane-hygiene budget in §1 still applies).
 
-**Fall-back when `ask_user_question` is unavailable**: in non-interactive hosts (RPC/ACP without a chat dialog or non-TTY runs) the tool is stripped from the model's tool list. In that case the canonical alternative is `herdr_pane wait_output` with a regex anchored to a **fresh** prompt — e.g. capture the last few visible lines first via `herdr_pane read --lines 5` and pattern-match on a prompt that is preceded by non-empty output (the post-command prompt is the only one that is). Still one blocking tool call, still no `bash sleep` polling. Never fall back to `sleep`+`read`: that is the noisy loop this section exists to avoid.
+**Fall-back when the push-UI question tool is unavailable**: in non-interactive hosts (RPC/ACP without a chat dialog or non-TTY runs) the tool is stripped from the model's tool list. In that case the canonical alternative is `herdr_pane wait_output` with a regex anchored to a **fresh** prompt — e.g. capture the last few visible lines first via `herdr_pane read --lines 5` and pattern-match on a prompt that is preceded by non-empty output (the post-command prompt is the only one that is). Still one blocking tool call, still no `bash sleep` polling. Never fall back to `sleep`+`read`: that is the noisy loop this section exists to avoid.
 
 **Anti-patterns:**
 
@@ -212,7 +224,7 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 - NEVER silently fix a mistake in their pane; narrate it so the correction is the lesson.
 - NEVER end your turn after the gate instruction and re-prompt for the next gate — issue the gate in the same turn as the instruction so the student can answer it directly.
 - NEVER `bash sleep` then `herdr_pane read` in a loop — every iteration is a streaming LLM reply, which is the exact failure mode this section is designed to prevent.
-- NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use `ask_user_question` as the gate, or a single bounded `wait_output` if the gate is unavailable.
+- NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use the push-UI question tool as the gate, or a single bounded `wait_output` if the gate is unavailable.
 - NEVER gate on a bare idle-prompt regex (`$ `, `❯ `) — those matches exist in the visible buffer before the student types anything (stale-prompt false-positive). Anchor the fall-back regex on something that only appears *after* a command completes (e.g. the prompt preceded by a non-blank command line) or use a `--lines` bound small enough to exclude the pre-existing prompt.
 - Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the student's shell differs from what a bioinformatics tutorial usually assumes (bash).
 
@@ -227,22 +239,22 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 
 §7's per-item loop below assumes the JSON is on disk; if it isn't, your first turn is "import the quiz from the lesson Markdown first."
 
-Same side-pane setup as §6 (split with `focus: true` into a scratch dir; reuse the pane if one is already open — no new pane per quiz item). The difference is **output shape**: §6 is "do this and tell me when done," §7 is "answer this one question at a time." Same gate primitive (`ask_user_question`), different per-item loop.
+Same side-pane setup as §6 (split with `focus: true` into a scratch dir; reuse the pane if one is already open — no new pane per quiz item). The difference is **output shape**: §6 is "do this and tell me when done," §7 is "answer this one question at a time." Same gate primitive (the host's push-UI question tool — see the *Host equivalents* table near the top of §6), different per-item loop.
 
-Quiz item types map onto the tool's parameters as follows:
+Quiz item types map onto the tool's parameters as follows. Where features (preview, multiSelect, notes) are noted as "tool-forbidden", the §6 host-equivalents table explains which host provides them and which silently drops the field:
 
-| Quiz item | `ask_user_question` shape | Notes |
+| Quiz item | Push-UI question shape | Notes |
 |---|---|---|
-| Single-answer MCQ (2–4 choices) | 1 question, 2–4 options, `multiSelect: false` | radio buttons; preview per option for code/data snippets |
-| Multi-answer MCQ ("pick 2 of these 4") | 1 question, 2–4 options, `multiSelect: true` | checkboxes; options[].preview forbidden by tool for multi-select |
-| Spot-the-bug / dry-run | 1 question, single-select, options each carry `preview: <markdown>` | side-by-side compare renders ≥100 cols; preview = snippet or table |
-| Short-answer recall | 1 question, 2 dummy options, prompt the student to use the `Type something.` row | free-text answer reaches the model verbatim |
+| Single-answer MCQ (2–4 choices) | 1 question, 2–4 options, `multiSelect: false` | radio buttons; preview per option for code/data snippets (preview = Pi / rpiv only — see host table) |
+| Multi-answer MCQ ("pick 2 of these 4") | 1 question, 2–4 options, `multiSelect: true` | checkboxes; options[].preview forbidden by tool for multi-select (and unsupported on Claude Code / OpenCode) |
+| Spot-the-bug / dry-run | 1 question, single-select, options each carry `preview: <markdown>` | side-by-side compare ≥100 cols (Pi only); on Claude Code / OpenCode the preview string is silently ignored — narrate the bug in the option description instead |
+| Short-answer recall | 1 question, 2 dummy options, prompt the student to use the `Type something.` row | free-text answer reaches the model verbatim (Pi only; Claude Code / OpenCode offer a similar free-text option in their native pickers) |
 | Task ("actually run the command") | reuse §6's 2-option gate (`I did it` / `Something went wrong`) | identical mechanism; here it counts as one quiz item with observable proof |
 
-**Per-item loop** (one item = one `ask_user_question` call, repeated until the quiz is exhausted — never batch more than one quiz item into a single call, because then per-item wrong-answer coaching has to wait until the whole batch resolves and the `Submit` review tab swallows intermediate feedback):
+**Per-item loop** (one item = one push-UI question call, repeated until the quiz is exhausted — never batch more than one quiz item into a single call, because then per-item wrong-answer coaching has to wait until the whole batch resolves and the `Submit` review tab swallows intermediate feedback. On Claude Code / OpenCode, "one item per call" is even more strictly required because the host has no Submit review tab at all):
 
    a. Author the item. `header` ≤16 chars (e.g. `Q3 / 6: SAM flags`). Mark the correct option `(Recommended)` only if you're using it as the *default* choice during cold review — for graded items, do NOT mark correct; let the student earn it. The student can press Enter on a blank tab to reveal nothing; that's the right behavior for recall.
-   b. `ask_user_question` — one blocking tool call. Agent emits zero tokens while the student answers.
+   b. The push-UI question tool — one blocking tool call. Agent emits zero tokens while the student answers. (See the *Host equivalents* table near the top of §6 for how each host renders this.)
    c. **On correct answer**: narrate the *why* (which property of the data triggered the right choice), then issue the next item in the same turn.
    d. **On wrong answer**: narrate the mistake before revealing the right answer ("the BAM index `.bai` is required because samtools random-access loads by `BAI` range, not the full file"). Use the `notes` field if the student added reasoning — it's on the answer envelope and reaches you as `user notes: <text>`.
    e. **On `Type something.` free text**: grade against the answer key you wrote (sometimes the student types a synonym or a longer form — accept obvious synonyms, narrate which forms you'd also accept).
@@ -252,11 +264,11 @@ Quiz item types map onto the tool's parameters as follows:
 
 **Anti-patterns:**
 
-- NEVER batch 2+ quiz items into one `ask_user_question` call — the `Submit` tab batches them but defers feedback until all are answered, which defeats per-item coaching.
+- NEVER batch 2+ quiz items into one push-UI question call — the `Submit` tab (Pi only) batches them but defers feedback until all are answered, which defeats per-item coaching. On Claude Code / OpenCode the same batching is even worse: the host has no review tab and answers in declaration order.
 - NEVER mark the correct option `(Recommended)` on a graded MCQ — that hints at the answer and removes the recall value. `(Recommended)` belongs only on workflow gates like §6 ("just pressed Enter = happy path").
 - NEVER use the `notes` field to smuggle the answer in — the student can read it; it's for *student → model* reasoning, not the reverse.
 - NEVER run quiz commands in the agent's own pane — type them in the student pane only (§6 rule carries over).
-- If `ask_user_question` is unavailable, the model has no equivalent fallback for graded MCQ (a `wait_output` regex can't capture a radio choice). In that host, end the quiz with a chat note and a `herdr_pane close` — do not invent a polling replacement.
+- If the push-UI question tool is unavailable, the model has no equivalent fallback for graded MCQ (a `wait_output` regex can't capture a radio choice). In that host, end the quiz with a chat note and a `herdr_pane close` — do not invent a polling replacement.
 
 **Interchange JSON (optional).** A quiz authored offline (PDF chapter → text → items by hand, lit-fetched paper, or a sibling skill like `study-designer`) can be dropped in as `quiz.schema.v1.json` (sibling of this file) and validated against `quiz.schema.v1.json` (JSON Schema 2020-12). §7 reads `items[]` one at a time and renders each via the per-item loop above; the `correct`, `answer_key`, and `gates` fields drive grading and §6 gate wiring. Inline-authored items skip the JSON entirely — the schema is a *convergence point* for importers, not a gate. `source.provenance` (PDF page, extractor toolchain) is preserved on each item so quizzes can be re-pointed at their facts during review.
 
