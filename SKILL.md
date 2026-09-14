@@ -1,8 +1,8 @@
 ---
 name: herdr-skill+
 description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, or wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.5.0
-updated: "2026-09-12"
+version: 0.6.0
+updated: "2026-09-15"
 triggers:
   - user mentions Herdr by name
   - delegate a task to another coding agent
@@ -165,27 +165,44 @@ This generalizes to any interactive secret prompt: GPG passphrase, SSH key passp
 
 ## §6 CLI/bioinformatics tutorial mode (human-driven pane)
 
-Inverts §1: the pane runs a plain shell that the **user** types into, not an AI agent. Your job is to set the exercise, watch, and coach — never to type the lesson commands for them.
+Inverts §1: the pane runs a plain shell that the **user** types into, not an AI agent. Your job is set the exercise, gate on milestone completion, and coach — never to type the lesson commands for them, never to busy-poll the pane.
+
+The natural failure mode of the previous design was LLM-token noise: every `bash sleep` + `herdr_pane read` iteration produced a fresh streaming reply while the student thought. The fix below uses `ask_user_question` as the **only** gating primitive — a single blocking tool call the student resolves by tabbing back to the chat and pressing `1` or `2`, with zero LLM tokens in between. (This mirrors how Claude Code and OpenCode surface permission prompts: a push UI, not a poll loop.)
 
 1. `herdr_layout pane_split` with `focus: true` (the user needs to interact with this pane directly — the opposite default from §1's background delegation). cwd should be a scratch/sandbox directory; confirm one exists or create it before the first exercise so a typo can't touch real project state.
-2. `herdr_pane read` — confirm idle shell prompt. Note its idle-prompt shape (e.g. the shell's own prompt character alone on the last line) — the continuous-monitoring loop below matches on this reappearing, not on any fixed string.
-3. Give the user the first instruction in chat (e.g. "run `samtools view -H aln.bam`") — plain language, not a command you send yourself — then go straight into the loop below **in the same turn**. Do not end your turn and wait for the user's next chat message; that defeats "the user shouldn't have to re-prompt."
+2. `herdr_pane read` — confirm idle shell prompt and note its shape (e.g. `$ `, `❯ `, `~/scratch> `). You are NOT going to regex-match it for gating in the loop below — `herdr_pane wait_output` matches against *existing* output too and returns on the stale pre-existing prompt before the student has typed anything (verified 2026-09-14). Polling to dodge that bug is exactly what produces per-iteration noise. Use `ask_user_question` instead.
+3. Give the student the first instruction in chat (e.g. "run `samtools view -H aln.bam`"). Plain language, not a command you send yourself. Then go straight into the gate below **in the same turn** — do not end your turn and wait for the student's next chat message; that defeats "the student shouldn't have to re-prompt."
 
-**Continuous-monitoring loop** (repeat until an end condition below is hit):
-   a. `herdr_pane wait_output` with `--regex` matching the idle prompt reappearing at the end of output, and a **bounded** timeout (a few minutes, not unbounded/zero) — a blocking wait that holds your turn open without ending it, so no new chat message is needed.
-   b. **On match**: `herdr_pane read` the new output. Explain it, correct mistakes, and give the next instruction as a short chat update (this does not end your turn) — then go back to (a). Treat an error message as the next teaching moment, not a failure to fix silently.
-   c. **On timeout with no match**: `herdr_pane read` to check whether the user is genuinely idle vs. still mid-command (e.g. a long-running tool). If genuinely idle for a long stretch, send one brief check-in ("still there? say if you want a hint or to skip this one") then re-issue (a) — don't spam check-ins on every timeout.
+**Step-gate loop** (repeat until an end condition below is hit):
+
+   a. `ask_user_question` with exactly one question, two options, in this order:
+
+      - `I did it (next lesson)` — description: "I ran the command in the side pane. Move on to the next step."
+      - `Something went wrong` — description: "I got an error or the output looks off — coach me through it before continuing."
+
+      Header chip: `Lesson N done` (≤16 chars). Mark the recommended option with `(Recommended)` on its label so the student can press Enter for the happy path. Add a note in the option description only if the lesson specifically requires one (e.g. paste an error).
+
+      The questionnaire is a single blocking tool call — once it is on screen, the agent emits **zero** further tokens until the student answers. The chat pane stays quiet while they work in the side pane, which is the whole point.
+
+   b. **On `I did it`**: `herdr_pane read` (source `visible` for the most recent command's output). Explain it in chat in 2-4 sentences, then issue the next instruction **and immediately re-issue the same gate** — keep the student inside the same turn so they don't have to prompt you between lessons.
+
+   c. **On `Something went wrong`**: `herdr_pane read` (source `recent-unwrapped`, generous `--lines`) to see what happened. Narrate the diagnosis — *what* went wrong, *why* — then either (i) give a corrected instruction and re-issue the same gate, or (ii) end the lesson if the error is structural (wrong shell, missing tool) and recommend re-setup.
+
    d. If an instruction would invoke sudo or another secret prompt, switch to the §5 pattern for that one step, then resume the loop.
 
-**End the loop** (and your turn) only when: the lesson plan is exhausted, or the user types/says something that signals they're done or stuck (e.g. "done", "quit", "I need help"). Then `herdr_pane close` — don't leave a teaching pane open past the session (pane-hygiene budget in §1 still applies).
+**End the loop** (and your turn) only when: the lesson plan is exhausted, or the student's answer or a chat message signals they're done or stuck ("done", "quit", "I need help"). Then `herdr_pane close` — don't leave a teaching pane open past the session (pane-hygiene budget in §1 still applies).
+
+**Fall-back when `ask_user_question` is unavailable**: in non-interactive hosts (RPC/ACP without a chat dialog or non-TTY runs) the tool is stripped from the model's tool list. In that case the canonical alternative is `herdr_pane wait_output` with a regex anchored to a **fresh** prompt — e.g. capture the last few visible lines first via `herdr_pane read --lines 5` and pattern-match on a prompt that is preceded by non-empty output (the post-command prompt is the only one that is). Still one blocking tool call, still no `bash sleep` polling. Never fall back to `sleep`+`read`: that is the noisy loop this section exists to avoid.
 
 **Anti-patterns:**
 
-- NEVER run the lesson's commands yourself and just show the user the transcript — they must type them.
+- NEVER run the lesson's commands yourself and just show the student the transcript — they must type them.
 - NEVER silently fix a mistake in their pane; narrate it so the correction is the lesson.
-- NEVER end your turn after a single instruction and wait for the user to prompt again mid-lesson — the whole point of the continuous-monitoring loop is that they only have to type in the pane, not in chat, until the lesson naturally ends.
-- NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use a bounded-but-real timeout and let the wait actually block.
-- Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the user's shell differs from what a bioinformatics tutorial usually assumes (bash).
+- NEVER end your turn after the gate instruction and re-prompt for the next gate — issue the gate in the same turn as the instruction so the student can answer it directly.
+- NEVER `bash sleep` then `herdr_pane read` in a loop — every iteration is a streaming LLM reply, which is the exact failure mode this section is designed to prevent.
+- NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use `ask_user_question` as the gate, or a single bounded `wait_output` if the gate is unavailable.
+- NEVER gate on a bare idle-prompt regex (`$ `, `❯ `) — those matches exist in the visible buffer before the student types anything (stale-prompt false-positive). Anchor the fall-back regex on something that only appears *after* a command completes (e.g. the prompt preceded by a non-blank command line) or use a `--lines` bound small enough to exclude the pre-existing prompt.
+- Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the student's shell differs from what a bioinformatics tutorial usually assumes (bash).
 
 ---
 
