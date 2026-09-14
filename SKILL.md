@@ -1,7 +1,7 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a quiz from PDF/Markdown. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.8.0
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.9.0
 updated: "2026-09-15"
 triggers:
   - user mentions Herdr by name
@@ -11,7 +11,8 @@ triggers:
   - check another agent's model/quota/usage
   - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
   - run a quiz / knowledge-check in a side pane (MCQ, spot-the-bug, task items)
-  - import a quiz from a PDF / Markdown / lit-fetch source via bin/quiz-import-pdf.py
+  - import a course from PDF / Markdown into a Markdown spine (lesson = README+exercises+quiz-N.json)
+  - author a new course or extend an existing one in the Markdown spine + JSON quiz schema
 requires:
   - herdr >= 0.8.0
   - pi-herdr plugin installed and active (HERDR_PANE_ID set)
@@ -171,6 +172,13 @@ Inverts §1: the pane runs a plain shell that the **user** types into, not an AI
 
 The natural failure mode of the previous design was LLM-token noise: every `bash sleep` + `herdr_pane read` iteration produced a fresh streaming reply while the student thought. The fix below uses `ask_user_question` as the **only** gating primitive — a single blocking tool call the student resolves by tabbing back to the chat and pressing `1` or `2`, with zero LLM tokens in between. (This mirrors how Claude Code and OpenCode surface permission prompts: a push UI, not a poll loop.)
 
+**Course content intake.** §6 walks the student through a lesson whose source is plain Markdown. Two paths converge on this shape:
+
+- **Human-authored**: existing course layouts (e.g. `course-materials/<course>/week-N-*/{README,exercises,checklist}.md`, see `obs-2026-08-18-6-week-bacterial-genome-pipeline-course-built-via-2-herdr-de`) — open `week-N-*/exercises.md`, read the commands top to bottom, issue them one at a time as chat instructions, gate after each.
+- **Imported from PDF / paper**: `bin/quiz-import-pdf.py` (or any importer that emits the same `<course>/<lesson>/{README,exercises}.md` layout) produces the Markdown first; §6 then walks the same way. Import is a *stage* that runs **outside** §6 — convert the course into Markdown once, then run §6 against the result.
+
+§6's loop below assumes Markdown is on disk in front of you. If it isn't, your first turn is "import the source first" — not "import and then start teaching in the same turn."
+
 1. `herdr_layout pane_split` with `focus: true` (the user needs to interact with this pane directly — the opposite default from §1's background delegation). cwd should be a scratch/sandbox directory; confirm one exists or create it before the first exercise so a typo can't touch real project state.
 2. `herdr_pane read` — confirm idle shell prompt and note its shape (e.g. `$ `, `❯ `, `~/scratch> `). You are NOT going to regex-match it for gating in the loop below — `herdr_pane wait_output` matches against *existing* output too and returns on the stale pre-existing prompt before the student has typed anything (verified 2026-09-14). Polling to dodge that bug is exactly what produces per-iteration noise. Use `ask_user_question` instead.
 3. Give the student the first instruction in chat (e.g. "run `samtools view -H aln.bam`"). Plain language, not a command you send yourself. Then go straight into the gate below **in the same turn** — do not end your turn and wait for the student's next chat message; that defeats "the student shouldn't have to re-prompt."
@@ -207,6 +215,15 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 - Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the student's shell differs from what a bioinformatics tutorial usually assumes (bash).
 
 ## §7 Quiz / knowledge-check mode (human-driven pane)
+
+**Course content intake.** §7 grades against the **Markdown-source / JSON-quiz** split:
+
+- The lesson itself is plain Markdown — same path as §6 (`course-materials/<course>/<lesson>/{README,exercises}.md`).
+- Quiz items live in `quiz.schema.v1.json` (sibling of `SKILL.md`) per item-kind vocabulary in §7's table.
+- A new `quiz.import.sh --from <lesson-dir>` (or its agent equivalent) reads the lesson Markdown and emits a `quiz-N.json` matching `quiz.schema.v1.json`. The human or agent fact-checks every `correct` flag and `answer_key` before §7 sees it — never auto-grade from LLM-autogen, that is the authoritative-hallucination rule documented in `bin/quiz-import-pdf.py`'s docstring.
+- Two `kind: task` items are also valid at the lesson→quiz boundary: a `task` item is *literally* the §6 gate, dressed with `task_id`, `instruction`, and the canonical 2-option gates.
+
+§7's per-item loop below assumes the JSON is on disk; if it isn't, your first turn is "import the quiz from the lesson Markdown first."
 
 Same side-pane setup as §6 (split with `focus: true` into a scratch dir; reuse the pane if one is already open — no new pane per quiz item). The difference is **output shape**: §6 is "do this and tell me when done," §7 is "answer this one question at a time." Same gate primitive (`ask_user_question`), different per-item loop.
 
