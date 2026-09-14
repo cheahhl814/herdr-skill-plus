@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.11.0-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.11.1-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.11.0** (updated 2026-09-15). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.11.1** (updated 2026-09-15). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -206,6 +206,10 @@ git rev-parse --verify origin/main             # upstream HEAD
 - **Source-text sovereignty** — `bin/quiz-import-pdf.py --llm-stdin` accepts text the user pipes in; the script never *fetches* anything. Rights stay with the user.
 
 ## Changelog
+
+### v0.11.1 (2026-09-15)
+
+**`quiz.schema.v1.json` schema fix.** Lowered `options.minItems` from 2 to 1. The schema's prose already said `short` and `task` items are "optional / forbidden" for `options` (they rely on the host's `Type something.` row at runtime), but the `minItems: 2` constraint made that impossible to express in practice — surfaced during the v0.11.0 cross-host test (item 4 of `/tmp/quiz-test/quiz-herdr-basics.json` is a `short` with no options). Same `quiz.v1` contract, just no longer self-contradictory.
 
 ### v0.11.0 (2026-09-15)
 

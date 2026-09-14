@@ -63,9 +63,9 @@
         },
         "options": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 1,
           "maxItems": 4,
-          "description": "Required for mcq / multi / preview; optional / forbidden for short and task.",
+          "description": "Required for mcq / multi / preview (2-4 options); optional / forbidden for short and task. When omitted for short, the host appends its 'Type something.' row at runtime.",
           "items": { "$ref": "#/$defs/option" }
         },
         "answer_key": {
