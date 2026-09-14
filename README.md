@@ -113,7 +113,7 @@ course-materials/
     └── quiz-<lesson-id>.json     # matches quiz.schema.v1.json for §7
 ```
 
-Precedent: `~/claude_workspace/bioinformatics/AIx-BIO/course-materials/bacterial-genome-pipeline/` — 6-week course on bacterial genome assembly, CC-BY-SA 4.0, authored by 2 Herdr-delegated Pi agents (see `obs-2026-08-18-6-week-bacterial-genome-pipeline-course-built-via-2-herdr-de`).
+Precedent: published 6-week course on bacterial genome assembly (CC-BY-SA 4.0) authored by 2 Herdr-delegated Pi agents — see `obs-2026-08-18-6-week-bacterial-genome-pipeline-course-built-via-2-herdr-de`. The layout matches `course-materials/<course>/<lesson>/{README,exercises,quiz-<id>.json}` and is a canonical reference for hand-authored courses that import into §6 + §7.
 
 ### `bin/quiz-import-pdf.py` — course importer
 
