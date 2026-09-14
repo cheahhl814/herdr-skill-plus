@@ -1,7 +1,7 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, or wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.6.0
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, or run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.7.0
 updated: "2026-09-15"
 triggers:
   - user mentions Herdr by name
@@ -10,6 +10,7 @@ triggers:
   - run sudo or another privileged command safely
   - check another agent's model/quota/usage
   - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
+  - run a quiz / knowledge-check in a side pane (MCQ, spot-the-bug, task items)
 requires:
   - herdr >= 0.8.0
   - pi-herdr plugin installed and active (HERDR_PANE_ID set)
@@ -203,6 +204,39 @@ The natural failure mode of the previous design was LLM-token noise: every `bash
 - NEVER busy-poll (`wait_output` with a zero/near-zero timeout in a tight retry loop) — use `ask_user_question` as the gate, or a single bounded `wait_output` if the gate is unavailable.
 - NEVER gate on a bare idle-prompt regex (`$ `, `❯ `) — those matches exist in the visible buffer before the student types anything (stale-prompt false-positive). Anchor the fall-back regex on something that only appears *after* a command completes (e.g. the prompt preceded by a non-blank command line) or use a `--lines` bound small enough to exclude the pre-existing prompt.
 - Fish-shell caveat from §1 applies to any snippet you dictate — flag `$status` vs `$?`, `set VAR val` vs `export`, etc. where the student's shell differs from what a bioinformatics tutorial usually assumes (bash).
+
+## §7 Quiz / knowledge-check mode (human-driven pane)
+
+Same side-pane setup as §6 (split with `focus: true` into a scratch dir; reuse the pane if one is already open — no new pane per quiz item). The difference is **output shape**: §6 is "do this and tell me when done," §7 is "answer this one question at a time." Same gate primitive (`ask_user_question`), different per-item loop.
+
+Quiz item types map onto the tool's parameters as follows:
+
+| Quiz item | `ask_user_question` shape | Notes |
+|---|---|---|
+| Single-answer MCQ (2–4 choices) | 1 question, 2–4 options, `multiSelect: false` | radio buttons; preview per option for code/data snippets |
+| Multi-answer MCQ ("pick 2 of these 4") | 1 question, 2–4 options, `multiSelect: true` | checkboxes; options[].preview forbidden by tool for multi-select |
+| Spot-the-bug / dry-run | 1 question, single-select, options each carry `preview: <markdown>` | side-by-side compare renders ≥100 cols; preview = snippet or table |
+| Short-answer recall | 1 question, 2 dummy options, prompt the student to use the `Type something.` row | free-text answer reaches the model verbatim |
+| Task ("actually run the command") | reuse §6's 2-option gate (`I did it` / `Something went wrong`) | identical mechanism; here it counts as one quiz item with observable proof |
+
+**Per-item loop** (one item = one `ask_user_question` call, repeated until the quiz is exhausted — never batch more than one quiz item into a single call, because then per-item wrong-answer coaching has to wait until the whole batch resolves and the `Submit` review tab swallows intermediate feedback):
+
+   a. Author the item. `header` ≤16 chars (e.g. `Q3 / 6: SAM flags`). Mark the correct option `(Recommended)` only if you're using it as the *default* choice during cold review — for graded items, do NOT mark correct; let the student earn it. The student can press Enter on a blank tab to reveal nothing; that's the right behavior for recall.
+   b. `ask_user_question` — one blocking tool call. Agent emits zero tokens while the student answers.
+   c. **On correct answer**: narrate the *why* (which property of the data triggered the right choice), then issue the next item in the same turn.
+   d. **On wrong answer**: narrate the mistake before revealing the right answer ("the BAM index `.bai` is required because samtools random-access loads by `BAI` range, not the full file"). Use the `notes` field if the student added reasoning — it's on the answer envelope and reaches you as `user notes: <text>`.
+   e. **On `Type something.` free text**: grade against the answer key you wrote (sometimes the student types a synonym or a longer form — accept obvious synonyms, narrate which forms you'd also accept).
+   f. **On `Something went wrong` for task items**: §6 fall-back applies — read pane, diagnose, give corrected instruction, re-issue the same gate.
+
+**End the loop** only when the quiz is exhausted. After the last item, emit one summary chat line with `score/total` and one short paragraph of *what to review before the next attempt* — pointers, not answers, so the student still has to do the next attempt themselves. Then `herdr_pane close` per the §1 hygiene rule.
+
+**Anti-patterns:**
+
+- NEVER batch 2+ quiz items into one `ask_user_question` call — the `Submit` tab batches them but defers feedback until all are answered, which defeats per-item coaching.
+- NEVER mark the correct option `(Recommended)` on a graded MCQ — that hints at the answer and removes the recall value. `(Recommended)` belongs only on workflow gates like §6 ("just pressed Enter = happy path").
+- NEVER use the `notes` field to smuggle the answer in — the student can read it; it's for *student → model* reasoning, not the reverse.
+- NEVER run quiz commands in the agent's own pane — type them in the student pane only (§6 rule carries over).
+- If `ask_user_question` is unavailable, the model has no equivalent fallback for graded MCQ (a `wait_output` regex can't capture a radio choice). In that host, end the quiz with a chat note and a `herdr_pane close` — do not invent a polling replacement.
 
 ---
 
