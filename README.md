@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue)](#-installation)
+[![Version](https://img.shields.io/badge/version-0.10.0-blue)](#-installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#-installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.9.0** (updated 2026-09-15).
+> Current version: **v0.10.0** (updated 2026-09-15).
 
 ## Contents
 

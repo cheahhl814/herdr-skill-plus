@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-quiz-import-pdf.py - PDF / Markdown chapter -> course-Markdown scaffold.
+quiz-import-pdf.py - PDF / Markdown / stdin text -> course-Markdown scaffold.
 
 **Markdown is the spine**, JSON is only emitted at the lesson->quiz boundary.
 This importer mirrors the existing course layout at
@@ -8,39 +8,51 @@ This importer mirrors the existing course layout at
 `obs-2026-08-18-6-week-bacterial-genome-pipeline-course-built-via-2-herdr-de`)
 plus a `quiz-<id>.json` matching `quiz.schema.v1.json` for §7 grading.
 
-Usage:
-    # One lesson from a Markdown chapter (single source -> one lesson)
-    quiz-import-pdf.py --md chapter.md --title "SAM flags" \\
-        --lesson-id ch3-sam-flags --out-dir course-materials/
+Three source paths exist because real course content arrives in many
+shapes; we keep a Python CLI deterministic and use LLM mediation only
+as a fallback for shapes no parser handles.
 
-    # One lesson from a PDF chapter (use --pages)
+Usage:
+    # 1. PDF chapter - one lesson scaffold (pymupdf4llm)
     quiz-import-pdf.py --pdf textbook.pdf --pages 42-60 \\
         --title "SAM flags" --lesson-id ch3-sam-flags \\
         --out-dir course-materials/
 
-    # Multi-chapter PDF: run once per chapter (the simplest, most predictable shape)
-    for chap in 1 2 3; do
-      quiz-import-pdf.py --pdf textbook.pdf --pages "$chap"-pages \\
-        --title "Chapter $chap" --lesson-id ch$chap \\
-        --out-dir course-materials/
-    done
-    # Then write course-materials/README.md by hand with the mermaid course map.
+    # 2. Markdown / plain text on disk - one lesson scaffold
+    quiz-import-pdf.py --md chapter.md --title "SAM flags" \\
+        --lesson-id ch3-sam-flags --out-dir course-materials/
 
-    # Quiz only - emit quiz-<id>.json from an already-authored lesson
+    # 3. LLM-mediated fallback - pipe *any* text via stdin
+    #    (YouTube transcript copy-paste, Notion export, lecture notes
+    #    dictated from audio, DOCX-after-pandoc-conversion, etc.)
+    #
+    #    The script does NOT call an LLM. It writes the source text to
+    #    <lesson>/source.txt, scaffolds the Markdown + quiz JSON
+    #    skeletons, and emits a FILL_THIS.md directive that the agent
+    #    reads in chat and fills. The user retains ownership - the
+    #    script never *fetches* anything; the user provides the text.
+    cat transcript.txt | quiz-import-pdf.py --llm-stdin \\
+        --title "SAM flags" --lesson-id ch3-sam-flags \\
+        --out-dir course-materials/
+    # ...then the agent reads the printed directive and fills the
+    # skeleton README, exercises, and quiz JSON from source.txt.
+
+    # 4. Quiz only - emit quiz-<id>.json from an already-authored lesson
     quiz-import-pdf.py --quiz-from course-materials/<course>/<lesson>/exercises.md \\
         --lesson-id ch3-sam-flags --title "SAM flags"
 
-It produces, per lesson:
-    <out-dir>/<slug>/README.md         (~1500 words of lecture / concepts)
-    <out-dir>/<slug>/exercises.md      (typed shell commands)
+The script produces, per lesson:
+    <out-dir>/<slug>/README.md         (~1500 words lecture / concepts skeleton)
+    <out-dir>/<slug>/exercises.md      (typed shell commands skeleton)
     <out-dir>/<slug>/quiz-<id>.json    (matches quiz.schema.v1.json for §7)
+    <out-dir>/<slug>/source.txt        (only in --llm-stdin mode; immutable
+                                        reference of the user-provided text)
 
-Why call-once-per-chapter rather than --lessons ch1=... ch2=...:
-    A multi-chapter PDF's table of contents is hard to parse generically
-    (Roman vs Arabic pages, appendix vs body, foreword vs chapter 1).
-    A human who knows the page ranges imports faster than the script
-    guessing wrong. Run this script in a loop; the workflow is
-    predictable and easy to diff.
+A multi-chapter PDF's table of contents is hard to parse generically
+(Roman vs Arabic pages, appendix vs body, foreword vs chapter 1).
+A human who knows the page ranges imports faster than the script
+guessing wrong. Run this script in a loop; the workflow is
+predictable and easy to diff.
 """
 
 from __future__ import annotations
@@ -184,11 +196,77 @@ def write_quiz(out_dir: Path, lesson_slug: str, lesson_id: str, lesson_title: st
     return path
 
 
+def write_llm_directive(lesson_dir: Path, lesson_title: str, lesson_id: str, source_text: str, source_path: Path, items: int) -> Path:
+    """Write the directive the agent (or human) reads to fill the skeletons.
+
+    The directive is the LLM-mediated counterpart to a parser invocation: it
+    is concrete enough that an LLM agent can mechanically fill the
+    README / exercises / quiz skeletons from source.txt without having to
+    re-derive the source. Includes the source SHA so the agent can verify
+    the staged text matches the user's intent.
+    """
+    import hashlib
+    sha = hashlib.sha256(source_text.encode("utf-8")).hexdigest()[:12]
+    excerpt = source_text[:1500] + ("..." if len(source_text) > 1500 else "")
+    body = (
+        "# FILL_THIS.md - LLM-authored lesson directive\n\n"
+        f"---\n"
+        f"title: {lesson_title}\n"
+        f"lesson_id: {lesson_id}\n"
+        f"source_path: {source_path}\n"
+        f"source_sha256_12: {sha}\n"
+        f"source_chars: {len(source_text)}\n"
+        f"items_requested: {items}\n"
+        f"status: pending - agent or human fills the skeletons below\n"
+        "---\n\n"
+        "## What this is\n\n"
+        "You (the agent reading this in chat) are being asked to fill the lesson\n"
+        "skeletons under this directory from the user-provided text at\n"
+        f"`{source_path}`. The skeletons are:\n\n"
+        f"- `README.md` - lecture / concepts, ~1500 words, suitable for §6 tutorial read-aloud\n"
+        f"- `exercises.md` - typed shell commands the student runs, suitable for §6 lesson walk\n"
+        f"- `quiz-{lesson_id}.json` - {items} quiz items matching `quiz.schema.v1.json`, suitable for §7 per-item gate\n\n"
+        "## Source excerpt (first 1500 chars)\n\n"
+        f"```text\n{excerpt}\n```\n\n"
+        "## Fill instructions\n\n"
+        "1. Read `source.txt` in full. Do not paraphrase beyond what the source states.\n"
+        "2. Fill `README.md` by replacing the **Source excerpt** fenced block with prose\n"
+        "   covering the lesson's main concepts. Keep `## Learning objectives` placeholder\n"
+        "   until you list 3-5 outcomes.\n"
+        "3. Fill `exercises.md` by replacing the `Exercise 2 / 3-N` stubs with real,\n"
+        "   typed shell commands grounded in the source. Use verbatim commands where\n"
+        "   the source gives them; reconstruct only when the source describes a tool\n"
+        "   but not its invocation, and flag reconstruction with `# reconstructed`.\n"
+        "4. Fill `quiz-{lesson_id}.json` per item:\n"
+        "   - Pick a mix of `mcq`, `multi`, `preview`, `short`, `task` kinds\n"
+        "     (see `quiz.schema.v1.json`).\n"
+        "   - Set `correct: true` on exactly the right option(s).\n"
+        "   - For `short`, write `answer_key` as a reference answer; §7 accepts\n"
+        "     obvious synonyms during grading, you only write the canonical form.\n"
+        "   - For `task`, link to its §6 lesson via `task_id` if known.\n"
+        "5. Validate the JSON against `quiz.schema.v1.json` after writing:\n"
+        '   uv run --with jsonschema python3 -c "import json, jsonschema; \\\n'
+        f'   jsonschema.validate(json.load(open(\'quiz-{lesson_id}.json\')), json.load(open(\'quiz.schema.v1.json\')))"\n'
+        "6. Delete this `FILL_THIS.md` once the skeletons are filled; it has no\n"
+        "   semantic role beyond orchestrating your next turn.\n\n"
+        "## Hard rules\n\n"
+        "- Do NOT introduce facts not present in `source.txt`. If the source is thin\n"
+        "  on a topic, write fewer items rather than hallucinate correct answers.\n"
+        "- Do NOT mark more than one option `correct: true` on `mcq` items.\n"
+        "- Do NOT batch quiz items into fewer call(s) - §7 enforces one\n"
+        "  ask_user_question call per item.\n"
+    )
+    path = lesson_dir / "FILL_THIS.md"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--pdf", help="Source PDF path (uses pymupdf4llm)")
     src.add_argument("--md", help="Source markdown / plain text path")
+    src.add_argument("--llm-stdin", action="store_true", help="Read source text from stdin (LLM-mediated fallback)")
     src.add_argument("--quiz-from", help="Existing lesson .md path; emit quiz JSON only, no Markdown re-emit")
     ap.add_argument("--pages", help="PDF page range like 42-60 (PDF only)", default=None)
     ap.add_argument("--title", required=True, help="Course or lesson title")
@@ -199,8 +277,42 @@ def main() -> int:
     args = ap.parse_args()
 
     emitted: list[Path] = []
+    directive_emitted: Path | None = None
 
-    if args.quiz_from:
+    if args.llm_stdin:
+        # LLM-mediated fallback: user pipes text into stdin. Script writes
+        # the text to disk as the immutable reference, scaffolds the
+        # Markdown + JSON skeletons, and emits a FILL_THIS.md directive
+        # that the agent reads in chat. The script never *fetches*; the
+        # user provides the text - the rights stay with the user.
+        if sys.stdin.isatty():
+            sys.exit("--llm-stdin requires piped input; redirect or pipe a file. Try: cat source.txt | quiz-import-pdf.py --llm-stdin ...")
+        text = sys.stdin.read()
+        if not text.strip():
+            sys.exit("--llm-stdin: stdin was empty.")
+        slug = slugify(args.lesson_id or args.title)
+        out_dir = Path(args.out_dir)
+        lesson_dir = out_dir / slug
+        lesson_dir.mkdir(parents=True, exist_ok=True)
+        source_path = lesson_dir / "source.txt"
+        source_path.write_text(text, encoding="utf-8")
+        source_meta = {
+            "type": "stdin",
+            "path": str(source_path),
+            "extracted_by": "quiz-import-pdf.py+stdin-redirect",
+            "source_chars": len(text),
+        }
+        course_readme = out_dir / "README.md"
+        if not course_readme.exists():
+            emitted.append(write_top_level_readme(out_dir, args.title, str(source_path)))
+        written = write_lesson_md(lesson_dir, args.title, text, source_meta)
+        emitted.extend(written.values())
+        if not args.no_quiz:
+            qpath = write_quiz(out_dir, slug, args.lesson_id or slug, args.title, text, source_meta, args.items)
+            emitted.append(qpath)
+        directive_emitted = write_llm_directive(lesson_dir, args.title, args.lesson_id or slug, text, source_path, args.items)
+        emitted.append(directive_emitted)
+    elif args.quiz_from:
         # Quiz-only mode against an existing lesson
         src_path = Path(args.quiz_from)
         text, extracted_by = extract_md(str(src_path))
@@ -243,7 +355,17 @@ def main() -> int:
     print(f"Wrote {len(emitted)} files:")
     for p in emitted:
         print(f"  {p}")
-    print("Next step: agent or human fills q/options/correct in each quiz-<id>.json against extracted_text_excerpt.")
+    if directive_emitted is not None:
+        print()
+        print("=" * 72)
+        print("ACTION: Open this file and follow it. The agent must read")
+        print(f"  {directive_emitted}")
+        print("and fill the skeletons (README.md, exercises.md, quiz-*.json)")
+        print("from source.txt. Do not skip this step; empty skeletons teach")
+        print("nothing.")
+        print("=" * 72)
+    else:
+        print("Next step: agent or human fills q/options/correct in each quiz-<id>.json against extracted_text_excerpt.")
     return 0
 
 

@@ -27,7 +27,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["pdf", "notebooklm", "manual", "html", "markdown", "other"]
+          "enum": ["pdf", "notebooklm", "manual", "html", "markdown", "stdin", "other"]
         },
         "path": { "type": "string" },
         "pages": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
