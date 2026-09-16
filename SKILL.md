@@ -1,8 +1,8 @@
 ---
 name: herdr-skill+
 description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.11.1
-updated: "2026-09-15"
+version: 0.11.2
+updated: "2026-09-16"
 triggers:
   - user mentions Herdr by name
   - delegate a task to another coding agent
@@ -30,6 +30,7 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
 ## §1 Delegation sequence (core)
 
 1. `herdr_layout pane_split` — get a pane ID. Default topology: sibling pane, caller's tab + cwd. Use another tab/workspace/cwd only if the user asked for it. For background work the user should not be pulled into, pass `focus: false` on the `herdr_layout` call (the standalone `herdr` CLI's equivalent, if invoked directly rather than through the tool, is `--no-focus`).
+   > **Concurrent-write isolation (decide BEFORE splitting):** if two or more agents will WRITE to the same git repo concurrently, share one working tree — `git worktree add ../<repo>-wt-<agent> -b <branch>` per writing agent and pass that worktree path as the pane's cwd; integrate at merge time, where conflicts are visible instead of silently interleaved. Sharing a tree fails silently (index.lock races, contaminated test runs from a neighbor's half-finished edits, clobbered build/cache state), while worktree overhead fails loudly. Worktrees are NOT needed for advisory/brainstorm agents that write only to /tmp briefs, disjoint directories (one agent per subtree, explicit ownership), or serial work (one writer, others idle) — there a worktree is pure ceremony and adds a stale-base problem. Rule of thumb: N writers > 1 → isolate; N readers / 1 writer → share the tree.
 2. Verify the pane is at an idle interactive shell prompt (`herdr_pane read`) before starting an agent.
 3. `herdr_agent start` with the pane ID.
    - `name` must match `[a-z][a-z0-9_-]{0,31}`.
