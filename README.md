@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.11.1-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.12.0-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.11.1** (updated 2026-09-15). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.12.0** (updated 2026-09-19). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -206,6 +206,21 @@ git rev-parse --verify origin/main             # upstream HEAD
 - **Source-text sovereignty** — `bin/quiz-import-pdf.py --llm-stdin` accepts text the user pipes in; the script never *fetches* anything. Rights stay with the user.
 
 ## Changelog
+
+### v0.12.0 (2026-09-19)
+
+**§6 step-gate loop hardening** (from an external Claude Code review of SKILL.md):
+
+- **Output-vs-step verification.** On `I did it`, the pane read is now checked against the step before explaining: the instructed command (or a valid variant) must appear as executed, and a command that should produce output must not be empty. Mismatches route to the error branch instead of being confidently narrated as correct. New anti-pattern: narrating unverified output.
+- **Hardened `wait_output` fall-back.** The old output-anchored regex could not distinguish a completed silent command (`cd`, `export`, `set`) from a stale prompt. The fall-back now requires buffer growth past a pre-instruction line-count snapshot **plus** a trailing prompt match; residual limit (long-running silent commands) documented with two workarounds (wait on an output fragment, or an explicit `echo step-N-done` marker).
+- **Tab-back cue.** With `focus: true` the student is in the side pane and may not think to return; the first instruction now must include one sentence on how to get back to the chat gate, repeated if the gate sits unanswered.
+- **Retry cap.** After 3 consecutive `Something went wrong` answers on the same step, the identical gate is no longer re-issued; the loop offers skip / show-expected-result / keep-trying through the gate, and ends honestly if the student prefers. Never forced.
+
+Also reconciles README version drift (README still showed v0.11.1 while SKILL.md was already v0.11.2 — the concurrent-write isolation decision rule shipped in v0.11.2).
+
+### v0.11.2 (2026-09-16)
+
+**Concurrent-write isolation decision rule in delegation step 1.** Added the decide-BEFORE-splitting rule: N writers > 1 → per-agent `git worktree add` with the worktree path as the pane's cwd; worktrees NOT needed for advisory-only agents, disjoint-directory, or serial work. Sharing one tree fails silently (index.lock races, contaminated test runs); worktree overhead fails loudly.
 
 ### v0.11.1 (2026-09-15)
 
