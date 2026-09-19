@@ -2,6 +2,9 @@
 context/
 BRIEF.md
 
+# bioinfo-skill-creator run artifact (stale generated metadata, not consumed by the skill)
+params.json
+
 # OS / editor artifacts
 .DS_Store
 Thumbs.db

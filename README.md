@@ -174,7 +174,6 @@ herdr-skill+/
 ├── docs-corpus/             # Offline snapshots of herdr CLI + 7 coding-agent harnesses
 ├── bin/
 │   └── quiz-import-pdf.py   # Course importer (4 modes; --llm-stdin fallback)
-├── params.json              # Skill metadata (name, version, owner)
 ├── LICENSE                  # MIT
 └── .gitignore
 ```
