@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.15.1-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.16.0-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.15.1** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.16.0** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -213,6 +213,14 @@ git rev-parse --verify origin/main             # upstream HEAD
 - **Source-text sovereignty** — `bin/quiz-import-pdf.py --llm-stdin` accepts text the user pipes in; the script never *fetches* anything. Rights stay with the user.
 
 ## Changelog
+
+### v0.16.0 (2026-09-24)
+
+**Three operational rules adopted from community practice** (research into other herdr orchestration skills and parallel-agent workflows):
+
+- **§2 verification economics.** Re-checking is for changed inputs, not ceremony: reuse a check's result when its inputs are unchanged (a handoff, re-read, or re-prompt does not invalidate evidence or require a second full suite); rerun only checks whose inputs changed, results went stale relative to later edits, or that contradict other evidence. Both failure modes named: redundant re-runs burn time budget; stale green results hide regressions.
+- **§1 step 4 — staged dispatch for expensive or hard-to-verify batches.** When batch outputs are costly or slow to verify (image/doc generation, long migrations, no cheap pass/fail marker), send 1 first, verify it per §2 against a representative case, then dispatch the remainder — a systemic defect caught after dispatch is N× the damage.
+- **§4.5 — unattended-yolo rule.** Explicitly unattended work (user-requested fire-and-forget, or long unwatched batches) launches with the harness's full-auto-approval flag from the §4.5 table instead of the intermediate default, because a blocked worker nobody is watching is a dead worker. Scoped: explicit user intent only (never chosen for convenience), task-owned paths only, one chat line disclosing the flag; secrets/credentials/outside-owned-paths → §5, never yolo; interactive sessions keep the intermediate default.
 
 ### v0.15.0 (2026-09-24)
 
