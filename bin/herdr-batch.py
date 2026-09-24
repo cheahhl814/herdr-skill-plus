@@ -19,6 +19,7 @@ Row fields:
   convo_cursor  last-seen herdr-convo read cursor
   state         pending | working | blocked | done | idle | lost | merged
   verified      §2 output check passed (bool)
+  round         §8 brainstorming: last completed round (r0/r1/r2/synthesis)
 
 Subcommands:
   new   [--dir DIR]           create a ledger, print its path
@@ -56,6 +57,7 @@ FIELDS = (
     "session_id",
     "convo_cursor",
     "state",
+    "round",
 )
 TERMINAL_STATES = {"merged", "lost"}
 
@@ -119,7 +121,7 @@ def cmd_set(args) -> None:
 def cmd_show(args) -> None:
     data = _load(pathlib.Path(args.file).expanduser())
     rows = sorted(data["rows"].values(), key=lambda r: r["agent_name"])
-    cols = ["agent_name", "harness", "tier", "state", "verified", "pane_id",
+    cols = ["agent_name", "harness", "tier", "round", "state", "verified", "pane_id",
             "tab_id", "worktree", "convo_cursor", "task"]
     if args.md:
         print("| " + " | ".join(cols) + " |")

@@ -1,7 +1,7 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.14.0
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, brainstorm or debate with other agents (bidirectional multi-agent critique rounds), run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.15.0
 updated: "2026-09-24"
 triggers:
   - user mentions Herdr by name
@@ -11,6 +11,7 @@ triggers:
   - check another agent's model/quota/usage
   - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
   - run a quiz / knowledge-check in a side pane (MCQ, spot-the-bug, task items)
+  - brainstorm / debate / get a second opinion *with critique* together with other agents (bidirectional §8 mode, not a one-shot opinion poll)
   - import a course from PDF / Markdown into a Markdown spine (lesson = README+exercises+quiz-N.json)
   - import a course from any text source via bin/quiz-import-pdf.py --llm-stdin (YouTube transcript, Notion export, lecture notes)
   - author a new course or extend an existing one in the Markdown spine + JSON quiz schema
@@ -160,7 +161,7 @@ Decision procedure — cache discovery in-session per harness/provider after fir
 1. Classify the task into a tier (table below).
 2. Discover lazily (first use per session, then reuse): harnesses via `herdr agent start --help` + `docs-corpus/herdr/supported-agents.md`; providers per harness (pi `--provider`/`--list-models`; opencode `opencode models`; copilot provider env vars; codex `model_providers` in config.toml; claude/gemini/agy locked — see `docs-corpus/providers/providers-matrix.md`); models per provider (§4 list commands + `ollama list`, note `:cloud` vs local); Ollama pre-flight (daemon via `ollama ps`, model present via `ollama list` — `ollama pull` is a prerequisite, never implicit).
 3. Match discovered options against the tier's required properties, never by remembered model name.
-4. **Ask-user gate** — fire ONLY when no profile match AND (T2 task, OR a hard-cap harness is near its probed limit, OR ≥2 candidates tie on all required properties). Use the house Evidence + Recommend + Options convention. Never fire for an unambiguous T0/T1 match or a profile hit — auto-pick.
+4. **Ask-user gate** — fire ONLY when no profile match AND (T2 task, OR a hard-cap harness is near its probed limit, OR ≥2 candidates tie on all required properties, OR a §8 brainstorm with ≥3 seats, any T2 seat, or a round beyond R2). Use the house Evidence + Recommend + Options convention. Never fire for an unambiguous T0/T1 match or a profile hit — auto-pick.
 5. State tier + chosen option + one-line reason (profile match / cheapest / fastest / quota constraint) before launching.
 
 Fallback: a herdr-delegated sub-agent with no ask-user tool surfaces its recommendation in pane output and waits; the calling agent reads it and asks the user on its behalf.
@@ -310,6 +311,52 @@ Quiz item types map onto the tool's parameters as follows. Where features (previ
 - If the push-UI question tool is unavailable, the model has no equivalent fallback for graded MCQ (a `wait_output` regex can't capture a radio choice). In that host, end the quiz with a chat note and a `herdr_pane close` — do not invent a polling replacement.
 
 **Interchange JSON (optional).** A quiz authored offline (PDF chapter → text → items by hand, lit-fetched paper, or a sibling skill like `study-designer`) can be dropped in as `quiz.schema.v1.json` (sibling of this file) and validated against `quiz.schema.v1.json` (JSON Schema 2020-12). §7 reads `items[]` one at a time and renders each via the per-item loop above; the `correct`, `answer_key`, and `gates` fields drive grading and §6 gate wiring. Inline-authored items skip the JSON entirely — the schema is a *convergence point* for importers, not a gate. `source.provenance` (PDF page, extractor toolchain) is preserved on each item so quizzes can be re-pointed at their facts during review.
+
+## §8 Multi-agent brainstorming mode (bidirectional)
+
+Use when the user asks to brainstorm, debate, or get a second opinion *with critique* — not a one-shot opinion poll (that is plain §1 delegation). You (the orchestrator) are both a **participant** and the **only channel** between seats; seats never see each other's panes. That isolation is the anti-sycophancy mechanism (arXiv 2502.19130: agents converge on the first answer they see; staged no-direct-communication visibility is the measured countermeasure) — never break it by pasting raw transcripts across seats.
+
+Setup: seats per §4.6 (a brainstorm is T3 read-only unless the question needs T2; prefer a distinct harness/provider per seat — same-model seats share blind spots); topology per §1 step 1 (no worktrees — advisory agents, see §1's isolation note); one §1.6 ledger row per seat. State the anchor question, the sub-mode (table below), the seat lineup, and the round cap in one line before R0. Artifacts per round go to `<ledger-dir>/<batch>/r<N>-<seat>.md` (the orchestrator writes them; seats stay read-only).
+
+1. **R0 — Independent draft.** Write YOUR draft to `r0-self.md` BEFORE reading any seat — you are a participant, and the first answer you read becomes your anchor. Batch-dispatch the anchor question + response contract to all seats (§1 step 4). Wait for every seat; verify each against the contract (§2). Save each response as `r0-<seat>.md`.
+2. **R1 — Cross-critique (anonymized relay).** Build the relay from what seats wrote, copied as written: anchor question verbatim; positions P1..Pn shuffled and unattributed (yours included); settled points in one line; per contested point the seats' own best arguments as written. You only strip names, shuffle, and group — never pick or paraphrase a "strongest" argument. No vote counts, no confidence levels, no quotes (visible majority triggers conformity; verbatim style leaks authorship). Each seat's response also carries `RELAY FIDELITY: ok | misrepresented — <what>`; if a seat flags misrepresentation, re-send its corrected field before using the relay. Ask each seat to attack the strongest opposing point, then answer in the contract. Read responses with herdr-convo `read --cursor` (§2).
+3. **Stop or decide.** Stop when the disagreement map is empty, or every `CHANGED: yes` names a verified argument and positions converged, or the split is values-only (more rounds won't help). Verify every cited argument exists in the relay file you sent (one grep); treat a fabricated citation exactly like an unnamed one — discount the change, keep the seat's prior position as its vote. Otherwise run **R2 as a decision round** per the table (rank or vote, no new arguments). Never an R3 without the user's OK — add a seat instead of a round.
+4. **Synthesis.** Report: the decision (or ranked ideas), the margin, the strongest losing argument, and a **Dissent** section. Never present an outvoted position as agreed. Close seat tabs (§1 hygiene); mark ledger rows `done`.
+
+**Response contract** (every round, every seat — prompt content, not tool parameters):
+
+```
+POSITION: <one sentence>
+RECOMMENDATION: <what to do>
+TOP-3 RISKS: 1. 2. 3.
+CONTRARIAN TAKE: <the best argument against your own position>
+CHANGED: no | yes — because <named argument from the relay>
+RELAY FIDELITY: ok | misrepresented — <what>
+CONFIDENCE: low | medium | high
+EVIDENCE: <file:line, command output, citation — or "reasoning only">
+```
+
+| Sub-mode | Task signal | R2 protocol | Output |
+| --- | --- | --- | --- |
+| **Divergent** (ideation) | open-ended, many valid answers | No convergence: each seat ranks the pooled deduplicated ideas top-3 (Borda) | Union of ideas, ranked; dissent column is where the novelty lives |
+| **Convergent / reasoning** (design choice, tradeoffs) | judgment call | Plurality vote with ≥3 active seats, ranked tiebreak; **2 seats → stop after R1, user breaks the tie** | Winner + margin + strongest losing argument |
+| **Convergent / factual** ("does X support Y") | checkable answer | Evidence-checked consensus: orchestrator verifies each EVIDENCE line (reads the file, runs the command); no counting | Verified answer; unverifiable claims flagged |
+| **Synthesis** ("draft/combine") | user wants a doc, not a pick | Orchestrator merges; each position gets a traceable section | Doc + Dissent section |
+
+**Round barrier & blocked seats.** A round is a barrier: never relay before every seat has settled AND passed the contract check. A blocked seat gets one §3 recovery attempt plus a fixed window after the last healthy seat settles (default 5 min); then mark it `excluded-r<N>` in the ledger — its R0 position still appears under Dissent labelled "not critiqued", but it does not vote. Fewer than 2 active seats → ask the user: re-dispatch, continue one-on-one, or abort.
+
+**Decision rule:** the orchestrator never votes (it both debates and would tally), voting requires ≥3 active seats, and the orchestrator states the sub-mode at R0 so the protocol isn't picked after the fact to suit the result.
+
+**Anti-patterns:**
+
+- NEVER read a seat before committing your own R0 draft — the first answer you read becomes the anchor.
+- NEVER relay verbatim excerpts, authorship, harness names, or tallies between seats.
+- NEVER choose or paraphrase which argument to relay — copy seat-written fields as written; that choice is how orchestrator bias enters the relay.
+- NEVER add rounds to force agreement — forced extra rounds lower accuracy; scale seats instead (per §4.6 gate).
+- NEVER use approval voting (it mostly ends with no decision) — ranked or plurality voting, or evidence-checked consensus.
+- NEVER let the question change mid-brainstorm — restate it verbatim in every relay; a new scope means a new brainstorm.
+- NEVER relay a partial round — every seat settles and passes the contract check first (round barrier above).
+- NEVER accept `CHANGED: yes` without a verified named argument — that is how sycophancy shows up.
 
 ---
 

@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.14.0-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.15.0-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.14.0** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.15.0** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -205,6 +205,16 @@ git rev-parse --verify origin/main             # upstream HEAD
 - **Source-text sovereignty** — `bin/quiz-import-pdf.py --llm-stdin` accepts text the user pipes in; the script never *fetches* anything. Rights stay with the user.
 
 ## Changelog
+
+### v0.15.0 (2026-09-24)
+
+**New §8 — multi-agent brainstorming mode (bidirectional).** Until now, "brainstorm with another agent" meant one-shot opinion collection (prompt → read → relay). §8 turns it into a real critique exchange, designed via online research (arXiv 2502.19130 *Voting or Consensus?*, Du et al. 2305.14325, arXiv 2502.19559 problem drift, kiloloop/brainstorm protocol) and a live two-round debate with a delegated Claude Code seat — which conceded 4 orchestrator critiques, revising the design mid-flight (the section was dogfooded before it existed):
+
+- **Round structure** R0 independent draft (orchestrator writes its own BEFORE reading any seat — it is a participant; prevents anchoring) → R1 anonymized cross-critique (positions shuffled/unattributed, copied verbatim from seat-written fields, no tallies) → R2 decision round only if real disagreement remains. Hard cap 2 interaction rounds — add seats, not rounds (forced extra rounds reduce accuracy; groupthink).
+- **Sycophancy countermeasures**: herdr's seat isolation IS the "no direct communication" channel the research recommends; `CHANGED: yes` must cite a named argument, and the orchestrator greps the saved relay file to verify it (fabricated = discounted); `RELAY FIDELITY` self-check per seat; the orchestrator never picks/paraphrases which arguments to relay (relay-author-bias fix from round 2).
+- **Decision protocols by sub-mode**: divergent → Borda rank of pooled ideas (dissent = novelty); convergent/reasoning → plurality vote with ≥3 seats (2-seat ties go to the user; approval voting forbidden — 59% no-decision); convergent/factual → orchestrator verifies each EVIDENCE line; synthesis → merge with a Dissent section. The orchestrator never votes at any seat count.
+- **Round barrier + blocked seats**: one §3 recovery attempt + 5-min window, then `excluded-r<N>` in the ledger (R0 position kept in Dissent, labelled "not critiqued", no vote); <2 active seats → ask the user.
+- **Wiring**: seats are T3 read-only (§4.5); §4.6 ask-user gate extended (≥3 seats, any T2 seat, round past cap, hard-cap harness); one §1.6 ledger row per seat with a new `round` field; per-round artifacts `<ledger-dir>/<batch>/r<N>-<seat>.md` make a brainstorm resumable after compaction.
 
 ### v0.14.0 (2026-09-24)
 
