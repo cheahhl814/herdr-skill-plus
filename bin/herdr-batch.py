@@ -112,6 +112,8 @@ def cmd_set(args) -> None:
             f"error: unknown field(s) {sorted(unknown)}; valid: {', '.join(FIELDS)}"
         )
     row.update(updates)
+    if args.verified is not None:
+        row["verified"] = args.verified.strip().lower() in ("1", "true", "yes")
     if updates.get("state") == "merged":
         row["verified"] = True  # merging implies the §2 check passed
     _save(path, data)
