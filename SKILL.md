@@ -1,8 +1,8 @@
 ---
 name: herdr-skill+
 description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.12.0
-updated: "2026-09-19"
+version: 0.13.1
+updated: "2026-09-24"
 triggers:
   - user mentions Herdr by name
   - delegate a task to another coding agent
@@ -29,7 +29,9 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
 
 ## §1 Delegation sequence (core)
 
-1. `herdr_layout pane_split` — get a pane ID. Default topology: sibling pane, caller's tab + cwd. Use another tab/workspace/cwd only if the user asked for it. For background work the user should not be pulled into, pass `focus: false` on the `herdr_layout` call (the standalone `herdr` CLI's equivalent, if invoked directly rather than through the tool, is `--no-focus`).
+1. **Decide the topology BEFORE creating layout.** Count how many secondary agents the task will run concurrently.
+   - **1 secondary agent** → `herdr_layout pane_split` — get a pane ID. Default topology: sibling pane, caller's tab + cwd. Use another tab/workspace/cwd only if the user asked for it. For background work the user should not be pulled into, pass `focus: false` on the `herdr_layout` call (the standalone `herdr` CLI's equivalent, if invoked directly rather than through the tool, is `--no-focus`).
+   - **2+ secondary agents** → do NOT split a second pane. Every split beyond the first shrinks each pane's share of the screen; at 2+ splits a pane drops to roughly 1/4 width, where agent output is effectively unreadable — both for you when verifying via `herdr_agent read`/`herdr-convo` and for the user watching the TUI. Instead, create **one new tab per agent** (`herdr_layout tab_create`; each new tab comes with its own root pane — no extra split needed) and run steps 2–5 below against each tab's root pane. Tabs keep every agent full-width; the user switches tabs instead of squinting at quarter-panes. Set each tab's `cwd` the same way you would have set the pane's (worktree/scratch dirs per the concurrent-write isolation rule below); pass `focus: false` for background batches the user shouldn't be pulled into.
    
    > **Concurrent-write isolation (decide BEFORE splitting):** if two or more agents will WRITE to the same git repo concurrently, share one working tree — `git worktree add ../<repo>-wt-<agent> -b <branch>` per writing agent and pass that worktree path as the pane's cwd; integrate at merge time, where conflicts are visible instead of silently interleaved. Sharing a tree fails silently (index.lock races, contaminated test runs from a neighbor's half-finished edits, clobbered build/cache state), while worktree overhead fails loudly. Worktrees are NOT needed for advisory/brainstorm agents that write only to /tmp briefs, disjoint directories (one agent per subtree, explicit ownership), or serial work (one writer, others idle) — there a worktree is pure ceremony and adds a stale-base problem. Rule of thumb: N writers > 1 → isolate; N readers / 1 writer → share the tree.
 2. Verify the pane is at an idle interactive shell prompt (`herdr_pane read`) before starting an agent.
@@ -46,7 +48,7 @@ Herdr tools are opt-in: only use them when the user explicitly invokes this work
 
 > CRITICAL: `herdr_agent start` never creates or changes layout. If no pane exists yet, step 1 is mandatory — never call `start` against a pane you have not just split or confirmed idle.
 
-> Pane hygiene: reuse an existing idle-pane shell running (or last running) a compatible harness instead of splitting a new pane per task; keep total panes ≤4 (incl. primary) and `herdr_pane close` unused ones once a task's verification completes — panes are a resource, not per-task disposables.
+> Pane hygiene: reuse an existing idle-pane shell running (or last running) a compatible harness instead of splitting a new pane per task; keep total panes ≤2 per tab (incl. primary) — a batch of 2+ agents goes into new tabs, not more panes (step 1) — and `herdr_pane close` unused ones once a task's verification completes — panes are a resource, not per-task disposables.
 > Herdr panes run fish — `herdr_pane run` commands must be fish-safe (`$status`, not `$?`); a fish parse error aborts the entire line except the error banner.
 
 ## §2 Verification & completion rules
