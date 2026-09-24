@@ -1,15 +1,15 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.15.0-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.15.1-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
-Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, runs a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or imports a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD). **Workflow-only** — tool schemas (`herdr_layout`, `herdr_pane`, `herdr_agent`) are the source of truth for parameters. Complements the [official herdr skill](https://github.com/herdr).
+Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, brainstorm/debate with other agents (cross-examine a design, devil's advocate, second opinion with critique), run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, runs a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or imports a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD). **Workflow-only** — tool schemas (`herdr_layout`, `herdr_pane`, `herdr_agent`) are the source of truth for parameters. Complements the [official herdr skill](https://github.com/herdr).
 
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.15.0** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.15.1** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -71,6 +71,7 @@ The skill is **not** a phased pipeline (no preflight → run → qc chain). It i
 | §5 | Privileged & secret-entry commands (sudo pattern) | sudo, GPG passphrase, SSH key, 2FA, etc. |
 | §6 | CLI / bioinformatics tutorial mode (human-driven pane) | "tutor me on samtools", "teach me this", "run me through chapter 3" |
 | §7 | Quiz / knowledge-check mode (human-driven pane) | "quiz me on chapter 3", "test me on …", mixed MCQ + spot-the-bug + task items |
+| §8 | Multi-agent brainstorming mode (bidirectional) | "brainstorm with another agent", "debate these two designs", "devil's advocate", "get a second opinion with critique", "have the agents argue it out and converge" |
 
 > [!TIP]
 > Every gated decision in §4-§7 surfaces back to the user via `ask_user_question` (Evidence + Recommend + Options) rather than auto-picking. This mirrors how Claude Code and OpenCode surface their permission prompts.
@@ -83,6 +84,10 @@ Trigger phrases (from SKILL.md `triggers:` frontmatter):
 - user mentions Herdr by name
 - delegate a task to another coding agent
 - run agents in parallel / multiple agents at once
+- brainstorm / debate / get a second opinion with critique together with other agents (§8)
+- cross-examine / stress-test / poke holes in my design or plan using another agent (§8)
+- play devil's advocate against my approach (§8)
+- get multiple agents to converge on / vote on a design decision (§8)
 - run sudo or another privileged command safely
 - check another agent's model/quota/usage
 - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
@@ -97,6 +102,8 @@ Two new triggers added in v0.6.0 / v0.8.0 / v0.9.0 / v0.10.0 that did not exist 
 - "teach/tutor the user on CLI … hands-on in a side pane" (§6)
 - "run a quiz / knowledge-check in a side pane" (§7)
 - "import a course from any text source via --llm-stdin" (importer LLM fallback)
+
+New §8 trigger family added in v0.15.0/v0.15.1: brainstorm, debate, second opinion *with critique*, cross-examine, devil's advocate, "argue it out and converge" — these route to the bidirectional brainstorm mode, NOT a one-shot §1 opinion poll (plain "ask another agent X" without a critique/exchange signal still routes to plain §1 delegation).
 
 ## Authoring & importing courses
 
@@ -168,12 +175,13 @@ for qp in sorted(glob.glob('course-materials/**/quiz-*.json', recursive=True)):
 
 ```text
 herdr-skill+/
-├── SKILL.md                 # Workflow library: §1-§7 (read sections on demand)
+├── SKILL.md                 # Workflow library: §1-§8 (read sections on demand)
 ├── quiz.schema.v1.json      # JSON Schema 2020-12 for §7 quiz interchange
 ├── README.md                # This file
 ├── docs-corpus/             # Offline snapshots of herdr CLI + 7 coding-agent harnesses
 ├── bin/
-│   └── quiz-import-pdf.py   # Course importer (4 modes; --llm-stdin fallback)
+│   ├── quiz-import-pdf.py   # Course importer (4 modes; --llm-stdin fallback)
+│   └── herdr-batch.py       # §1.6 batch ledger (new/set/show/todo)
 ├── LICENSE                  # MIT
 └── .gitignore
 ```

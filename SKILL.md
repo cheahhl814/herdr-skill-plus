@@ -1,12 +1,18 @@
 ---
 name: herdr-skill+
-description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, brainstorm or debate with other agents (bidirectional multi-agent critique rounds), run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
-version: 0.15.0
+description: Use when the user mentions Herdr, asks to delegate to another agent, run parallel agents, brainstorm or debate with other agents (bidirectional multi-agent critique rounds — cross-examine a design, devil's advocate, second opinion with critique, converge on a decision between agents), run sudo (or another privileged/secret-entry command) safely in a managed pane, check another agent's quota/usage, wants a hands-on CLI/bioinformatics tutorial in a side pane while you watch, run a quiz / knowledge-check (5-6 items, MCQ + spot-the-bug + task) in a side pane, or import a course from PDF/Markdown/any text source (with LLM-mediated fallback for non-PDF/non-MD) into a Markdown spine with optional quiz JSON per lesson. Workflow-only — tool schemas are the source of truth for parameters. Complements the official herdr skill.
+version: 0.15.1
 updated: "2026-09-24"
 triggers:
   - user mentions Herdr by name
   - delegate a task to another coding agent
   - run agents in parallel / multiple agents at once
+  - brainstorm / debate / get a second opinion *with critique* together with other agents (bidirectional §8 mode, not a one-shot opinion poll)
+  - cross-examine / stress-test / poke holes in my design or plan using another agent
+  - play devil's advocate against my approach
+  - get multiple agents to converge on / vote on a design decision
+  - which approach is better — have the agents argue it out
+  - ask another agent, then let them respond to each other's critiques (multi-agent discussion, critique rounds)
   - run sudo or another privileged command safely
   - check another agent's model/quota/usage
   - teach/tutor the user on CLI or bioinformatics commands hands-on in a side pane
