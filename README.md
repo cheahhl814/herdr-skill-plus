@@ -1,6 +1,6 @@
 # herdr-skill+
 
-[![Version](https://img.shields.io/badge/version-0.12.0-blue)](#installation)
+[![Version](https://img.shields.io/badge/version-0.14.0-blue)](#installation)
 [![Type](https://img.shields.io/badge/type-agent%20skill-blueviolet)](#installation)
 [![Built with](https://img.shields.io/badge/built%20with-bioinfo--skill--creator-orange)](https://github.com/cheahhl814/bioinfo-skill-creator)
 
@@ -9,7 +9,7 @@ Use when the user mentions Herdr, asks to delegate to another agent, run paralle
 **Repository**: https://github.com/cheahhl814/herdr-skill-plus
 
 > [!NOTE]
-> Current version: **v0.12.0** (updated 2026-09-19). See [Changelog](#changelog) below for what changed.
+> Current version: **v0.14.0** (updated 2026-09-24). See [Changelog](#changelog) below for what changed.
 
 ## Contents
 
@@ -205,6 +205,19 @@ git rev-parse --verify origin/main             # upstream HEAD
 - **Source-text sovereignty** — `bin/quiz-import-pdf.py --llm-stdin` accepts text the user pipes in; the script never *fetches* anything. Rights stay with the user.
 
 ## Changelog
+
+### v0.14.0 (2026-09-24)
+
+**Batch execution, merge-back, and resumability** (from a Claude Code feature brainstorm; all flags verified against `docs-corpus/herdr/online-docs-0.8.2/`):
+
+- **§1 step 4 — parallel batch dispatch.** With 2+ agents, a batch is only parallel if all prompts are sent before any wait begins: prompt each agent with `until: ["working"]` (returns on acceptance), then `herdr_agent wait` on every agent, servicing `blocked` first. Explicitly not fire-and-forget — every agent is still waited on and verified per §2.
+- **§1 isolation note — native herdr worktrees.** `herdr worktree create --cwd <repo> --branch <task>-<agent> --label <agent> --no-focus` replaces raw `git worktree add` (workspaces grouped under the parent repo, `worktree.created` events, right cwd inherited for free); `herdr worktree remove --workspace <id>` for cleanup (never deletes the branch, `--force` is ask-first). Raw git kept as fallback.
+- **New §1.5 worktree merge-back.** Gate on §2 verification → per-worktree diff+tests → merge smallest-diff-first → conflicts sent back to the owning agent (never resolved silently; escalate after 2 failed rounds) → cleanup that never deletes a branch without asking.
+- **New §1.6 batch ledger + `bin/herdr-batch.py`.** Interruption-survivable JSON ledger (one row per agent: task, tier, harness, tab/pane IDs, worktree, session_id, convo_cursor, state, verified). Resume after herdr restart or context compaction by matching `herdr_agent list` rows on the `<task-slug>-<harness>` agent naming; lost agents re-dispatch only with user approval. Stdlib-only; `new` / `set` / `show --md` / `todo` subcommands.
+- **§1 batch labeling.** Tabs renamed to the task slug (`herdr tab rename`), agents named `<task-slug>-<harness>` (doubles as the ledger join key), optional sidebar tokens via `herdr pane report-metadata`.
+- **§6 expected-output precomputation.** Optional hidden-tab rehearsal on a throwaway copy of the scratch dir so lesson gates compare the student's output against *real* recorded output (success and error variants). Deterministic exercises only; the student still types every command.
+
+Also reconciles README version drift again (README still showed v0.12.0 while SKILL.md was at v0.13.1 — the v0.13.x tab-first topology rule: 1 secondary agent → pane_split, 2+ → one new tab per agent, because 2+ splits squeeze panes to ~1/4 width).
 
 ### v0.12.0 (2026-09-19)
 
